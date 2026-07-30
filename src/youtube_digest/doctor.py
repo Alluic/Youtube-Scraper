@@ -78,7 +78,8 @@ def run_checks(config: AppConfig, logger: Any) -> list[CheckResult]:
             CheckResult(
                 "Telegram",
                 True,
-                f"bot @{bot.get('username', '?')} → chat {chat.get('id', config.telegram_chat_id)}",
+                f"bot @{bot.get('username', '?')} -> "
+                f"chat {chat.get('id', config.telegram_chat_id)}",
             )
         )
     except Exception as exc:
