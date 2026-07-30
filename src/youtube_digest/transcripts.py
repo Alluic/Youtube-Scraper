@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import re
 import shutil
+import time
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -102,6 +103,21 @@ class TranscriptProvider:
         work = self.temp_dir / f"{video_id}-subtitles"
         shutil.rmtree(work, ignore_errors=True)
         work.mkdir(parents=True, exist_ok=True)
+        provider = self
+
+        class YtDlpLogger:
+            def debug(self, message: str) -> None:
+                provider.logger.debug("yt-dlp: %s", message)
+
+            def info(self, message: str) -> None:
+                provider.logger.debug("yt-dlp: %s", message)
+
+            def warning(self, message: str) -> None:
+                provider.logger.debug("yt-dlp warning: %s", message)
+
+            def error(self, message: str) -> None:
+                provider.logger.debug("yt-dlp error: %s", message)
+
         options = {
             "quiet": True,
             "no_warnings": True,
@@ -112,20 +128,30 @@ class TranscriptProvider:
             "subtitleslangs": [self.language, f"{self.language}.*"],
             "subtitlesformat": "vtt/best",
             "outtmpl": str(work / f"{video_id}.%(ext)s"),
+            "retries": 3,
+            "fragment_retries": 3,
+            "extractor_retries": 3,
+            "sleep_interval_requests": 1,
+            "sleep_interval_subtitles": 2,
+            "logger": YtDlpLogger(),
         }
-        try:
-            with YoutubeDL(options) as ydl:
-                ydl.download([url])
-            candidates = sorted(work.glob("*.vtt"))
-            return candidates[0] if candidates else None
-        except Exception:
-            self.logger.debug(
-                "Subtitle retrieval failed for %s (%s)",
-                video_id,
-                "automatic" if automatic else "manual",
-                exc_info=True,
-            )
-            return None
+        for attempt in range(2):
+            try:
+                with YoutubeDL(options) as ydl:
+                    ydl.download([url])
+                candidates = sorted(work.glob("*.vtt"))
+                return candidates[0] if candidates else None
+            except Exception as exc:
+                self.logger.debug(
+                    "Subtitle retrieval attempt %s failed for %s (%s): %s",
+                    attempt + 1,
+                    video_id,
+                    "automatic" if automatic else "manual",
+                    exc,
+                )
+                if attempt == 0:
+                    time.sleep(5)
+        return None
 
     def captions(self, video_id: str, url: str) -> tuple[Path, str] | None:
         for automatic, source in ((False, "manual_captions"), (True, "auto_captions")):
@@ -178,6 +204,7 @@ class WhisperTranscriber:
         self.model_name = model_name
         self.logger = logger
         self._model: Any | None = None
+        self._device = "cuda"
 
     def _load(self) -> Any:
         if self._model is None:
@@ -185,6 +212,14 @@ class WhisperTranscriber:
                 from faster_whisper import WhisperModel
             except ImportError as exc:  # pragma: no cover
                 raise RuntimeError("The `faster-whisper` package is not installed.") from exc
+            if self._device == "cpu":
+                self.logger.info("Loading Whisper model %s on CPU int8", self.model_name)
+                self._model = WhisperModel(
+                    self.model_name,
+                    device="cpu",
+                    compute_type="int8",
+                )
+                return self._model
             self.logger.info("Loading Whisper model %s on CUDA", self.model_name)
             try:
                 self._model = WhisperModel(
@@ -197,6 +232,7 @@ class WhisperTranscriber:
                     "CUDA Whisper initialization failed; using CPU int8",
                     exc_info=True,
                 )
+                self._device = "cpu"
                 self._model = WhisperModel(
                     self.model_name,
                     device="cpu",
@@ -204,7 +240,19 @@ class WhisperTranscriber:
                 )
         return self._model
 
-    def transcribe(self, audio_path: Path) -> str:
+    @staticmethod
+    def _is_cuda_runtime_error(error: Exception) -> bool:
+        message = str(error).casefold()
+        markers = (
+            "cublas",
+            "cudnn",
+            "cuda",
+            "cannot be loaded",
+            "not found",
+        )
+        return any(marker in message for marker in markers)
+
+    def _transcribe_with_loaded_model(self, audio_path: Path) -> str:
         model = self._load()
         segments, _info = model.transcribe(
             str(audio_path),
@@ -215,3 +263,17 @@ class WhisperTranscriber:
         if not transcript.strip():
             raise RuntimeError("Whisper returned an empty transcript.")
         return transcript
+
+    def transcribe(self, audio_path: Path) -> str:
+        try:
+            return self._transcribe_with_loaded_model(audio_path)
+        except RuntimeError as exc:
+            if self._device != "cuda" or not self._is_cuda_runtime_error(exc):
+                raise
+            self.logger.warning(
+                "CUDA runtime is unavailable during transcription; retrying on CPU int8: %s",
+                exc,
+            )
+            self._model = None
+            self._device = "cpu"
+            return self._transcribe_with_loaded_model(audio_path)
