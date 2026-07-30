@@ -1,0 +1,23 @@
+[app]
+# The configure command writes the real file under:
+# %LOCALAPPDATA%\YoutubeFinanceDigest\config.toml
+data_dir = "C:\\Users\\YOUR_USER\\AppData\\Local\\YoutubeFinanceDigest"
+oauth_client_path = "C:\\Users\\YOUR_USER\\AppData\\Local\\YoutubeFinanceDigest\\client_secret.json"
+oauth_token_path = "C:\\Users\\YOUR_USER\\AppData\\Local\\YoutubeFinanceDigest\\oauth_token.json"
+telegram_chat_id = "YOUR_CHAT_ID"
+ollama_url = "http://127.0.0.1:11434"
+ollama_model = "gemma4:12b"
+timezone = "America/New_York"
+digest_time = "07:30"
+language = "en"
+whisper_model = "medium.en"
+transcript_retention_days = 30
+include_confidence = 0.70
+exclude_confidence = 0.85
+max_attempts = 3
+
+[filters]
+include_channels = []
+exclude_channels = []
+include_keywords = []
+exclude_keywords = []

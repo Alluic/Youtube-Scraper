@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+client_secret*.json
+oauth_token*.json
+credentials*.json
+secrets/
+*.pem
+*.key
+
+# Runtime data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+logs/
+transcripts/
+audio/
+downloads/
+runtime/
+*.log
+*.vtt
+*.srt
+*.webm
+*.m4a
+*.mp3
+*.mp4
